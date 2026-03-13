@@ -1,0 +1,14 @@
+# Python environment
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Massive Data & Databases (DO NOT PUSH)
+data/chroma_db/
+data/transcripts/
+*.pdf
+
+# Environment Variables
+.env
