@@ -69,8 +69,20 @@ with st.sidebar.expander("⚙️ Global Model Metrics (Test Set)"):
 if st.sidebar.button("Generate RAG AI Audit"):
     with st.spinner(f"Running Analysis for {selected_ticker} ({selected_period})..."):
         
-        # Isolate the exact historical quarter chosen by the user
+        # --- TIME-SERIES DELTA LOGIC ---
+        current_index = available_periods.index(selected_period)
+        has_prev_quarter = current_index < len(available_periods) - 1
+        
         target_q = company_data[company_data['Period'] == selected_period].iloc[:1]
+        
+        if has_prev_quarter:
+            prev_period = available_periods[current_index + 1]
+            prev_q = company_data[company_data['Period'] == prev_period].iloc[:1]
+        else:
+            prev_period = "N/A"
+            prev_q = None
+
+        # Clean data for XGBoost
         drop_cols = ['Ticker', 'Date', 'Year', 'Quarter', 'target', 'Period', 'Sector']
         X_latest = target_q.drop(columns=[c for c in drop_cols if c in target_q.columns])
         X_latest = X_latest.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], 0)
@@ -93,31 +105,46 @@ if st.sidebar.button("Generate RAG AI Audit"):
 
         col1, col2 = st.columns(2)
         
+        # --- SHAP + QoQ DELTA UI ---
         with col1:
             st.subheader(f"AI Prediction: {status}")
             st.metric("Model Confidence", f"{confidence:.1f}%")
             
-            # --- NEW UI: Simplified SHAP Output ---
-            st.subheader("Key Financial Drivers")
-            st.caption("Simplified mathematical impacts driving this prediction.")
+            st.subheader("Key Financial Drivers (QoQ Momentum)")
+            st.caption("Mathematical impacts and their trajectory since the previous quarter.")
             
             explainer = shap.TreeExplainer(model)
             shap_vals = explainer.shap_values(X_latest)
             
             shap_dict = dict(zip(X_latest.columns, shap_vals[0]))
-            # Sort by absolute magnitude to find the most important factors
             top_drivers = sorted(shap_dict.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+            
+            delta_context_for_llama = []
             
             for feature, impact in top_drivers:
                 # Clean the ugly database name for the UI
                 clean_name = feature.replace("_", " ").title()
                 
+                # Calculate QoQ Delta
+                current_val = target_q[feature].values[0] if feature in target_q.columns else 0
+                trend_str = "(No historical data)"
+                
+                if has_prev_quarter and feature in prev_q.columns:
+                    prev_val = prev_q[feature].values[0]
+                    if prev_val != 0:
+                        pct_change = ((current_val - prev_val) / abs(prev_val)) * 100
+                        trend_str = f"{pct_change:+.1f}% vs {prev_period}"
+                    else:
+                        trend_str = "N/A vs Prev Qtr"
+                
+                delta_context_for_llama.append(f"{clean_name}: AI Impact Score {impact:.4f} | Real Trend: {trend_str}")
+                
                 if impact > 0:
-                    st.success(f"📈 **{clean_name}**: +{impact:.4f} (Positive Impact)")
+                    st.success(f"📈 **{clean_name}**: +{impact:.4f}  \n*Trajectory: {trend_str}*")
                 else:
-                    st.error(f"📉 **{clean_name}**: {impact:.4f} (Negative Impact)")
+                    st.error(f"📉 **{clean_name}**: {impact:.4f}  \n*Trajectory: {trend_str}*")
 
-        # --- RAG RETRIEVAL PHASE ---
+        # --- RAG RETRIEVAL & LLAMA 3 PHASE ---
         with col2:
             st.subheader("🧠 Llama 3 Executive RAG Audit")
             
@@ -130,24 +157,23 @@ if st.sidebar.button("Generate RAG AI Audit"):
             except:
                 rag_context = "No specific corporate transcript found in the vector database."
 
-            sorted_shap = top_drivers[:3]
             prompt = f"""
             Act as a strict Senior Financial Auditor. Review the algorithmic output AND the corporate transcript excerpts for {selected_ticker} for the period {selected_period}.
             
             Model Prediction: {status}
             
-            Top 3 Mathematical Drivers:
-            1. {sorted_shap[0][0]}: {sorted_shap[0][1]:.4f} impact
-            2. {sorted_shap[1][0]}: {sorted_shap[1][1]:.4f} impact
-            3. {sorted_shap[2][0]}: {sorted_shap[2][1]:.4f} impact
+            Top 3 Mathematical Drivers & Quarter-over-Quarter Momentum:
+            1. {delta_context_for_llama[0]}
+            2. {delta_context_for_llama[1]}
+            3. {delta_context_for_llama[2]}
             
             Corporate Context (Recent Earnings Call Excerpts):
             {rag_context}
             
             Do NOT write a massive paragraph. Write a highly readable, structured executive audit using exactly these 3 bullet points:
-            - **The Numbers:** (1 sentence analyzing the SHAP mathematical drivers)
+            - **The Numbers:** (1 sentence analyzing the SHAP drivers AND their Quarter-over-Quarter trajectory)
             - **The Narrative:** (1 sentence analyzing the CEO's corporate context)
-            - **The Verdict:** (1 sentence stating the final risk outlook combining both)
+            - **The Verdict:** (1 sentence stating the final risk outlook combining the math momentum and the narrative)
             
             Do not hallucinate external facts. Keep the tone professional, brutal, and concise.
             """
