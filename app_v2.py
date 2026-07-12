@@ -135,7 +135,7 @@ if st.sidebar.button("Generate RAG AI Audit"):
                         pct_change = ((current_val - prev_val) / abs(prev_val)) * 100
                         trend_str = f"{pct_change:+.1f}% vs {prev_period}"
                     else:
-                        trend_str = "N/A vs Prev Qtr"
+                        trend_str = "New Data Point (No Prior Baseline)"
                 
                 delta_context_for_llama.append(f"{clean_name}: AI Impact Score {impact:.4f} | Real Trend: {trend_str}")
                 
