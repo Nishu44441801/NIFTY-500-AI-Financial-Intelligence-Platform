@@ -7,8 +7,19 @@ env/
 
 # Massive Data & Databases (DO NOT PUSH)
 data/chroma_db/
+data/chroma_db_test/
 data/transcripts/
+data/screener_cache/
+data/logs/
+*.db
+*.sqlite3
 *.pdf
+catboost_info/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
 
 # Environment Variables
 .env
+.env.local

@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import yfinance as yf
 import pandas as pd
 import os
